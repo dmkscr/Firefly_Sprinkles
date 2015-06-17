@@ -6,6 +6,7 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.os.SystemClock;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -14,43 +15,31 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 
-import com.gracenote.gnsdk.GnError;
-import com.gracenote.gnsdk.GnException;
-import com.gracenote.gnsdk.GnLicenseInputMode;
-import com.gracenote.gnsdk.GnManager;
-import com.gracenote.gnsdk.GnMusicIdStream;
-import com.gracenote.gnsdk.GnMusicIdStreamIdentifyingStatus;
-import com.gracenote.gnsdk.GnMusicIdStreamPreset;
-import com.gracenote.gnsdk.GnMusicIdStreamProcessingStatus;
-import com.gracenote.gnsdk.GnResponseAlbums;
-import com.gracenote.gnsdk.GnStatus;
-import com.gracenote.gnsdk.GnUser;
-import com.gracenote.gnsdk.GnUserStore;
-import com.gracenote.gnsdk.IGnCancellable;
-import com.gracenote.gnsdk.IGnMusicIdStreamEvents;
+import com.gracenote.gnsdk.*;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
 
 public class MainActivity extends ActionBarActivity {
 
     private static final String TAG = MainActivity.class.getName();
 
-    private AudioRecord recorder = null;
-    private AudioTrack track = null;
+    /**
+     * AudioRecording
+     */
+    private AudioRecord recorder                                             = null;
+    private AudioTrack track                                                 = null;
     private AudioManager manager                                             = null;
 
-    //    private static final int SAMPLERATE = 44100;
-    private static final int SAMPLERATE = 8000; // at least 22050 for gracenote
-    private static final int RECORDER_CHANNELS = AudioFormat.CHANNEL_IN_MONO;
-    private static final int TRACK_CHANNELS = AudioFormat.CHANNEL_OUT_MONO;
-    private static final int AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT;
-
-    private int minBufferSizeRec;
-    byte[] bufferRec;
+    private static final int SAMPLERATE =                                     44100;
+    private static final int RECORDER_CHANNELS =        AudioFormat.CHANNEL_IN_MONO;
+    private static final int TRACK_CHANNELS =          AudioFormat.CHANNEL_OUT_MONO;
+    private static final int AUDIO_ENCODING =        AudioFormat.ENCODING_PCM_16BIT;
 
     private Thread myThread;
-    private boolean isRunning = false;
+    private boolean isRunning                                               = false;
 
     /**
      * GNSDK
@@ -59,25 +48,21 @@ public class MainActivity extends ActionBarActivity {
     static final String gnsdkClientTag         = "EA1C43BD1FFE51ED7ECF272A2F04DA45";
     static final String gnsdkLicenseFilename                        = "license.txt";
 
+    private Context context;
 
     private GnManager gnManager;
     private GnUser gnUser;
     private GnMusicIdStream gnMusicIdStream;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState)
+    {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-       Context context  = this.getApplicationContext();
+        context  = this.getApplicationContext();
 
         setButtonHandlers();
-
-        enableButton(R.id.btnStartRecording,true);
-        enableButton(R.id.btnStopRecording,false);
-
-        minBufferSizeRec = AudioRecord.getMinBufferSize(SAMPLERATE,RECORDER_CHANNELS,AUDIO_ENCODING);
-        bufferRec = new byte[minBufferSizeRec/2];
 
         manager = (AudioManager)this.getSystemService(Context.AUDIO_SERVICE);
         manager.setMode(AudioManager.MODE_NORMAL);
@@ -127,89 +112,309 @@ public class MainActivity extends ActionBarActivity {
 
         try
         {
-            gnMusicIdStream = new GnMusicIdStream(gnUser, GnMusicIdStreamPreset.kPresetMicrophone,new IGnMusicIdStreamEvents() {
-                @Override
-                public void musicIdStreamProcessingStatusEvent(GnMusicIdStreamProcessingStatus gnMusicIdStreamProcessingStatus, IGnCancellable iGnCancellable) {
-                    Log.d(TAG, "----- musicIdStreamProcessingStatusEvent -----");
-                }
-
-                @Override
-                public void musicIdStreamIdentifyingStatusEvent(GnMusicIdStreamIdentifyingStatus gnMusicIdStreamIdentifyingStatus, IGnCancellable iGnCancellable) {
-                    Log.d(TAG, "----- musicIdStreamIdentifyingStatusEvent -----"+gnMusicIdStreamIdentifyingStatus.toString());
-                }
-
-                @Override
-                public void musicIdStreamAlbumResult(GnResponseAlbums gnResponseAlbums, IGnCancellable iGnCancellable) {
-                    Log.d(TAG, "----- musicIdStreamAlbumResult -----");
-                    Log.d("MainActivity","Album result" + gnResponseAlbums.toString());
-                }
-
-                @Override
-                public void musicIdStreamIdentifyCompletedWithError(GnError gnError) {
-                    Log.d(TAG, "----- musicIdStreamIdentifyCompletedWithError -----");
-                }
-
-                @Override
-                public void statusEvent(GnStatus gnStatus, long l, long l2, long l3, IGnCancellable iGnCancellable) {
-                    Log.d(TAG, "----- statusEvent -----"+gnStatus.toString());
-                }
-            });
+            gnMusicIdStream = new GnMusicIdStream(gnUser,GnMusicIdStreamPreset.kPresetMicrophone,new MusicIDStreamEvents());
         }
         catch (GnException e)
         {
             e.printStackTrace();
         }
-
-
     }
 
-    private void enableButton(int id,boolean isEnable){
-        ((Button)findViewById(id)).setEnabled(isEnable);
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu)
+    {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
     }
 
-    private void setButtonHandlers() {
-        ((Button)findViewById(R.id.btnStartRecording)).setOnClickListener(btnClick);
-        ((Button)findViewById(R.id.btnStopRecording)).setOnClickListener(btnClick);
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item)
+    {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings)
+        {
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
 
-    private View.OnClickListener btnClick = new View.OnClickListener() {
+        if ( gnMusicIdStream != null ) {
+
+//            // Create a thread to process the data pulled from GnMic
+//            // Internally pulling data is a blocking call, repeatedly called until
+//            // audio processing is stopped. This cannot be called on the main thread.
+//            Thread audioProcessThread = new Thread(new AudioProcessRunnable());
+//            audioProcessThread.start();
+//
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        if ( gnMusicIdStream != null ) {
+
+            try {
+
+                // to ensure no pending identifications deliver results while your app is
+                // paused it is good practice to call cancel
+                // it is safe to call identifyCancel if no identify is pending
+                gnMusicIdStream.identifyCancel();
+
+                // stopping audio processing stops the audio processing thread started
+                // in onResume
+                gnMusicIdStream.audioProcessStop();
+
+            } catch (GnException e) {
+
+                Log.e( TAG, e.errorCode() + ", " + e.errorDescription() + ", " + e.errorModule() );
+                Log.d( TAG, " " + e.errorAPI() + ": " +  e.errorDescription() );
+
+            }
+
+        }
+    }
+
+    /**
+     * Recording Thread
+     */
+    private void runThread(final boolean isRunning)
+    {
+        myThread = new Thread(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                runRunnable(isRunning);
+            }
+        });
+
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
+        myThread.start();
+    }
+
+    public void runRunnable(boolean isRunning)
+    {
+
+        if (isRunning == true) {
+
+            recorder = findAudioRecord();
+            if (recorder == null)
+            {
+                Log.e(TAG, "findAudioRecord error");
+                return;
+            }
+
+            track = findAudioTrack(track);
+            if (track == null)
+            {
+                Log.e(TAG, "findAudioTrack error");
+                return;
+            }
+            track.setPlaybackRate(SAMPLERATE);
+
+            if ( (AudioRecord.STATE_INITIALIZED == recorder.getState()) && (AudioTrack.STATE_INITIALIZED == track.getState()) ) // delete track @the end
+            {
+
+                int minBufferSize = AudioRecord.getMinBufferSize(SAMPLERATE, RECORDER_CHANNELS, AUDIO_ENCODING);
+                byte[] recordingBuffer = new byte[minBufferSize * 2];
+                long bytesRead = 0;
+
+                recorder.startRecording();
+
+                while (isRunning == true) {
+
+                    recorder.read(recordingBuffer, 0, recordingBuffer.length);
+
+                    ByteBuffer byteBuffer = ByteBuffer.wrap(recordingBuffer);
+
+                    bytesRead = gnMicrophone.getData(byteBuffer, byteBuffer.capacity());
+
+                    try
+                    {
+                        gnMusicIdStream.audioProcess(byteBuffer, bytesRead);
+                    }
+                    catch (GnException e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+
+            }
+            else
+            {
+                Log.d(TAG, "Init for Recorder and Track failed");
+                return;
+            }
+            return;
+        }
+        else
+        {
+            if (AudioRecord.STATE_INITIALIZED == recorder.getState())
+            {
+                recorder.stop();
+                recorder.release();
+            }
+
+            if (track != null && AudioTrack.STATE_INITIALIZED == track.getState())
+            {
+                if (track.getPlayState() != AudioTrack.PLAYSTATE_STOPPED)
+                {
+                    try
+                    {
+                        track.stop();
+                    }
+                    catch (IllegalStateException e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+                track.release();
+                manager.setMode(AudioManager.MODE_NORMAL);
+            }
+            return;
+        }
+    }
+
+    /**
+     * GNSDK MusicID-Stream event delegate
+     */
+    private class MusicIDStreamEvents implements IGnMusicIdStreamEvents
+    {
+        HashMap<String, String> gnStatus_to_displayStatus;
+
+        public MusicIDStreamEvents()
+        {
+            gnStatus_to_displayStatus = new HashMap<String,String>();
+            gnStatus_to_displayStatus.put(GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingStarted.toString(), "Identification started");
+            gnStatus_to_displayStatus.put(GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingFpGenerated.toString(), "Fingerprinting complete");
+            gnStatus_to_displayStatus.put(GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingLocalQueryStarted.toString(), "Lookup started");
+            gnStatus_to_displayStatus.put(GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingOnlineQueryStarted.toString(), "Lookup started");
+            gnStatus_to_displayStatus.put(GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingEnded.toString(), "Identification complete");
+        }
+
         @Override
-        public void onClick(View v) {
-            switch(v.getId()){
-                case R.id.btnStartRecording:{
+        public void statusEvent( GnStatus status, long percentComplete, long bytesTotalSent, long bytesTotalReceived, IGnCancellable cancellable )
+        {
+
+        }
+
+        @Override
+        public void musicIdStreamProcessingStatusEvent( GnMusicIdStreamProcessingStatus status, IGnCancellable canceller )
+        {
+            if(GnMusicIdStreamProcessingStatus.kStatusProcessingAudioStarted.compareTo(status) == 0)
+            {
+//                audioProcessingStarted = true;
+                /*runOnUiThread(new Runnable()
+                {
+                    public void run()
+                    {
+                        btnStartRecording.setEnabled(true);
+                    }
+                });*/
+            }
+        }
+
+        @Override
+        public void musicIdStreamIdentifyingStatusEvent( GnMusicIdStreamIdentifyingStatus status, IGnCancellable canceller )
+        {
+            if(gnStatus_to_displayStatus.containsKey(status.toString()))
+            {
+//                setStatus( String.format("%s", gnStatus_to_displayStatus.get(status.toString())), true );
+                Log.v("TAG", "musicIdStreamIdentifyingStatusEvent: " + String.format("%s", gnStatus_to_displayStatus.get(status.toString())));
+            }
+
+            if(status.compareTo( GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingLocalQueryStarted ) == 0 )
+            {
+//                lastLookup_local = true;
+            }
+            else if(status.compareTo( GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingOnlineQueryStarted ) == 0)
+            {
+//                lastLookup_local = false;
+            }
+
+            if ( status == GnMusicIdStreamIdentifyingStatus.kStatusIdentifyingEnded )
+            {
+//                setUIState( UIState.READY );
+                Log.v("TAG", "musicIdStreamIdentifyingStatusEvent: ENDED" + String.format("%s", gnStatus_to_displayStatus.get(status.toString())));
+            }
+        }
+
+        @Override
+        public void musicIdStreamAlbumResult( GnResponseAlbums result, IGnCancellable canceller )
+        {
+            Log.v("TAG", "musicIdStreamIdentifyingStatusEvent: RESULT" + result.toString());
+            /*lastLookup_matchTime = SystemClock.elapsedRealtime() - lastLookup_startTime;
+            activity.runOnUiThread(new UpdateResultsRunnable( result ));*/
+        }
+
+        @Override
+        public void musicIdStreamIdentifyCompletedWithError(GnError error)
+        {
+            /*if ( error.isCancelled() )
+                setStatus( "Cancelled", true );
+            else
+                setStatus( error.errorDescription(), true );
+            setUIState( UIState.READY );*/
+        }
+    }
+
+    /**
+     * OnClickListener Buttons Start and Stop Recording
+     */
+    private View.OnClickListener btnClick = new View.OnClickListener()
+    {
+        @Override
+        public void onClick(View v)
+        {
+            switch(v.getId())
+            {
+                case R.id.btnStartRecording:
+                {
                     isRunning = true;
-                    runThread();
-                    enableButton(R.id.btnStartRecording,false);
-                    enableButton(R.id.btnStopRecording, true);
+                    runThread(isRunning);
                     break;
                 }
-                case R.id.btnStopRecording:{
+                case R.id.btnStopRecording:
+                {
                     isRunning = false;
-                    //runThread(isRunning);
-                    enableButton(R.id.btnStartRecording,true);
-                    enableButton(R.id.btnStopRecording, false);
+                    runThread(isRunning);
                     break;
                 }
             }
         }
     };
 
-    private void runThread(){
-        myThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    runRunnable();
-                } catch (GnException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
-        myThread.start();
+    /**
+     * Button Handling and Enabling
+     */
+    Button btnStartRecording, btnStopRecording;
+
+    private void setButtonHandlers() {
+        btnStartRecording = ((Button)findViewById(R.id.btnStartRecording));
+        btnStartRecording.setOnClickListener(btnClick);
+        btnStopRecording = ((Button)findViewById(R.id.btnStopRecording));
+        btnStopRecording.setOnClickListener(btnClick);
     }
 
+    private void enableButton(int id,boolean isEnable){
+        ((Button)findViewById(id)).setEnabled(isEnable);
+    }
+
+    /**
+     * Helpers to find right setup for AudioTrack
+     */
     public AudioTrack findAudioTrack (AudioTrack track) {
         int myBufferSize = AudioTrack.getMinBufferSize(SAMPLERATE, TRACK_CHANNELS, AUDIO_ENCODING);
 
@@ -226,118 +431,15 @@ public class MainActivity extends ActionBarActivity {
         return track;
     }
 
-    public void runRunnable() throws GnException {
-
-        Log.d(TAG,"isRunning " + isRunning);
-
-        if (isRunning == false) {
-
-            if (AudioRecord.STATE_INITIALIZED == recorder.getState()) {
-                recorder.stop();
-                recorder.release();
-            }
-
-            if (track != null && AudioTrack.STATE_INITIALIZED == track.getState()) {
-
-                if (track.getPlayState() != AudioTrack.PLAYSTATE_STOPPED) {
-
-                    try{
-                        track.stop();
-                    }catch (IllegalStateException e)
-                    {
-                        e.printStackTrace();
-                    }
-
-                }
-
-                track.release();
-                manager.setMode(AudioManager.MODE_NORMAL);
-
-            }
-            return;
-
-        } else if (isRunning == true) {
-
-            recorder = findAudioRecord();
-            if (recorder == null) {
-                Log.e(TAG, "findAudioRecord error");
-                return;
-            }
-
-            track = findAudioTrack(track);
-            if (track == null) {
-                Log.e(TAG, "findAudioTrack error");
-                return;
-            }
-            track.setPlaybackRate(SAMPLERATE);
-
-            if ((AudioRecord.STATE_INITIALIZED == recorder.getState()) && (AudioTrack.STATE_INITIALIZED == track.getState())) {
-
-                byte[] data = new byte[minBufferSizeRec/2];
-
-                recorder.startRecording();
-                track.play();
-                int bytesRead = 0;
-
-                Log.d(TAG, "----- gnMusicIdStream init -----");
-                gnMusicIdStream.audioProcessStart(
-                        8000,
-                        16,
-                        2);
-                Log.d(TAG, "----- gnMusicIdStream iit after -----");
-
-                while (isRunning == true) {
-
-                    Log.d(TAG, "----- Running -----");
-
-                    bytesRead = recorder.read(bufferRec, 0, (minBufferSizeRec/2));
-                    for (int i = 0; i < data.length; i++) {
-                        data[i] =  bufferRec[i];
-                    }
-                    track.write(data, 0, data.length);
-
-                    try
-                    {
-                       // Log.d(TAG, "----- before -----");
-                       gnMusicIdStream.audioProcess(data);
-                       // Log.d(TAG, "----- after -----");
-                    }
-                    catch (GnException e)
-                    {
-                        e.printStackTrace();
-                    }
-
-
-                    bufferRec = new byte[minBufferSizeRec/2];
-                    data = new byte[minBufferSizeRec/2];
-
-                }
-
-                Log.d(TAG, "----- identifyskjsabfkhf -----");
-                gnMusicIdStream.identifyAlbumAsync();
-
-                // kill/destroy/interrupt thread
-                // null thread
-                // empty/clear buffer
-
-            } else {
-                Log.d(TAG, "Init for Recorder and Track failed");
-                return;
-            }
-//            myThread.interrupt();
-//            myThread = null;
-            return;
-
-        }
-    }
-
-    //private static int[] mSampleRates = new int[] { 44100, 22050, 11025, 8000 };
-    private static int[] mSampleRates = new int[] { 8000, 11025, 22050, 44100 };
+    /**
+     * Helpers to find right setup for AudioRecord (depending on device)
+     */
+    private static int[] mSampleRates = new int[] { 44100, 22050, 11025, 8000 };
     public AudioRecord findAudioRecord() {
 
         for (int rate : mSampleRates) {
-            for (short audioFormat : new short[] { AudioFormat.ENCODING_PCM_8BIT, AudioFormat.ENCODING_PCM_16BIT }) {
-                for (short channelConfig : new short[] { AudioFormat.CHANNEL_IN_MONO, AudioFormat.CHANNEL_IN_STEREO }) {
+            for (byte audioFormat : new byte[] { AudioFormat.ENCODING_PCM_8BIT, AudioFormat.ENCODING_PCM_16BIT }) {
+                for (byte channelConfig : new byte[] { AudioFormat.CHANNEL_IN_MONO, AudioFormat.CHANNEL_IN_STEREO }) {
                     try {
                         Log.d(TAG, "Attempting rate " + rate + "Hz, bits: " + audioFormat + ", channel: "
                                 + channelConfig);
@@ -361,108 +463,9 @@ public class MainActivity extends ActionBarActivity {
         return null;
     }
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
-    }
-
-
-// MusicID
-// MusicID-Stream
-/*
-
-// Initialize mic
-gnMicrophone = new GnMic(44100, 16, 1);
-        gnMicrophone.sourceInit();
-
-// Initialize music id stream
-        gnMusicIdStream = new GnMusicIdStream(gnMusicUser, new GnMusicIdStreamEvents());
-        gnMusicIdStream.audioProcessStart(
-        gnMicrophone.samplesPerSecond(),
-        gnMicrophone.sampleSizeInBits(),
-        gnMicrophone.numberOfChannels());
-
-// Create thread to process audio data from the mic
-        Thread audioProcessThread = new Thread(new Runnable()
-        {
-@Override
-public void run()
-        {
-        try
-        {
-        ByteBuffer byteBuffer = ByteBuffer.allocateDirect(1024*4);
-        long bytesRead = 0;
-        while(isListening)
-        {
-        bytesRead = gnMicrophone.getData(byteBuffer, byteBuffer.capacity());
-        gnMusicIdStream.audioProcess(byteBuffer.array(), bytesRead);
-        }
-        }
-        }
-        });
-
-// Call this method when user requests identification
-        gnMusicIdStream.identifyAlbumAsync();
-
-// Handle results in callback
- */
-
-
-
-/*
-
-MusicIDStreamEvents musicIDStreamEvents = new MusicIDStreamEvents();
-
-private class MusicIDStreamEvents extends GnMusicIdStreamEventsListener {
-
-    HashMap<String, String> gnStatus_to_displayStatus;
-
-    public MusicIDStreamEvents(){
-        gnStatus_to_displayStatus = new HashMap<String,String>();
-        gnStatus_to_displayStatus.put("kStatusStarted", "Identification started");
-        gnStatus_to_displayStatus.put("kStatusFpGenerated", "Fingerprinting complete");
-
-        //gnStatus_to_displayStatus.put("kStatusIdentifyingOnlineQueryStarted", "Online query started");
-        gnStatus_to_displayStatus.put("kStatusIdentifyingEnded", "Identification complete");
-    }
-
-    @Override
-    public void statusEvent( GnStatus status, long percentComplete, long bytesTotalSent, long bytesTotalReceived, IGnCancellable cancellable ) {
-        //setStatus( String.format("%d%%",percentComplete), true );
-    }
-
-    @Override
-    public void musicIdStreamStatusEvent( GnMusicIdStreamStatus status, IGnCancellable cancellable ) {
-        if(gnStatus_to_displayStatus.containsKey(status.toString())){
-            setStatus( String.format("%s", gnStatus_to_displayStatus.get(status.toString())), true );
-        }
-    }
-
-    @Override
-    public void musicIdStreamResultAvailable( GnResponseAlbums result, IGnCancellable cancellable ) {
-        activity.runOnUiThread(new UpdateResultsRunnable( result ));
-        setStatus( "Success", true );
-        setUIState( UIState.READY );
-    }
-}
-*/
+    /**
+     * Helpers to read license file from assets as string
+     */
     private String getAssetAsString( String assetName ){
 
         String 		assetString = null;
@@ -484,12 +487,11 @@ private class MusicIDStreamEvents extends GnMusicIdStreamEventsListener {
 
         } catch (IOException e) {
 
-
             Log.e( TAG, "Error getting asset as string: " + e.getMessage() );
 
         }
 
         return assetString;
     }
-}
 
+}
