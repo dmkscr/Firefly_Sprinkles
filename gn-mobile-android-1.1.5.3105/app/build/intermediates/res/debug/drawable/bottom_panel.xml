@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+    <layer-list  xmlns:android="http://schemas.android.com/apk/res/android">
+        <item    android:top="18dip" android:drawable="@drawable/solid_rectangle"/>
+    
+   
+        </layer-list>
+<!-- From: file:/C:/Program%20Files/Eclipse/eclipse/workspace/gn-mobile-android-1.1.5.3105/app/src/main/res/drawable/bottom_panel.xml -->

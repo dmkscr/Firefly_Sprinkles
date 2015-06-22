@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/gracenote_header_tile_3" 
+    android:tileMode="repeat" />
+<!-- From: file:/C:/Program%20Files/Eclipse/eclipse/workspace/gn-mobile-android-1.1.5.3105/app/src/main/res/drawable/headertile2.xml -->

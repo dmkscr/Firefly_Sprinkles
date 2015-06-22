@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<items version="2" >
+
+    <item
+        jar="C:\Program Files\Eclipse\eclipse\workspace\gn-mobile-android-1.1.5.3105\app\libs\gnsdk_helpers.jar"
+        jumboMode="false"
+        revision="22.0.1"
+        sha1="5cbe5ec63c7797baff39d007a26e9b35d6784ff9">
+        <dex dex="C:\Program Files\Eclipse\eclipse\workspace\gn-mobile-android-1.1.5.3105\app\build\intermediates\pre-dexed\debug\gnsdk_helpers-ad6e7dfb81d9cd779096b964f3108ff0cd9c50d0.jar" />
+    </item>
+    <item
+        jar="C:\Program Files\Eclipse\eclipse\workspace\gn-mobile-android-1.1.5.3105\app\libs\gnsdk.jar"
+        jumboMode="false"
+        revision="22.0.1"
+        sha1="831e72c854110643880bb1ccf4758fc6bcb909d3">
+        <dex dex="C:\Program Files\Eclipse\eclipse\workspace\gn-mobile-android-1.1.5.3105\app\build\intermediates\pre-dexed\debug\gnsdk-a30932375c0c17988cbfb7167ec0d97c9d1488a2.jar" />
+    </item>
+
+</items>
